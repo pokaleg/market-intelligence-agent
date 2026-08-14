@@ -247,6 +247,72 @@ SECTOR_ICONS = {
     "General Business": "📊"
 }
 
+# ---- Demo dataset: used when live fetch/AI calls are skipped ----
+# Pre-written, already "analyzed" so the demo path never touches
+# RSS feeds, Groq, or the internet at all — only the email send stays live.
+DEMO_ARTICLES = [
+    {
+        "title": "Fed Signals Possible Rate Pause as Inflation Cools",
+        "summary": "Federal Reserve officials hinted at a pause in rate hikes following softer inflation data.",
+        "link": "https://example.com/fed-rate-pause",
+        "source": "CNBC Business",
+        "sentiment": "positive", "urgency": "medium",
+        "key_insight": "Markets read this as a signal that the tightening cycle may be near its end.",
+        "recommended_action": "Monitor bond yields for confirmation before repositioning fixed-income exposure.",
+        "sector": "Finance"
+    },
+    {
+        "title": "Major Retailer Cuts Holiday Season Hiring Forecast",
+        "summary": "A large national retail chain lowered its seasonal hiring target citing softer consumer demand.",
+        "link": "https://example.com/retail-hiring-cut",
+        "source": "CNBC Business",
+        "sentiment": "negative", "urgency": "high",
+        "key_insight": "Weaker seasonal hiring often foreshadows softer holiday revenue guidance.",
+        "recommended_action": "Watch for follow-on guidance cuts from peer retailers this quarter.",
+        "sector": "Retail"
+    },
+    {
+        "title": "AI Startup Raises $120M Series C for Enterprise Automation",
+        "summary": "The company plans to use the funding to expand its enterprise sales team and R&D.",
+        "link": "https://example.com/ai-startup-series-c",
+        "source": "TechCrunch AI",
+        "sentiment": "positive", "urgency": "low",
+        "key_insight": "Continued late-stage AI funding suggests investor appetite hasn't cooled despite broader market caution.",
+        "recommended_action": "Track competitive response from incumbents in the same enterprise automation space.",
+        "sector": "Technology"
+    },
+    {
+        "title": "New FDA Guidance Tightens Rules on AI Diagnostic Tools",
+        "summary": "Regulators issued updated guidance requiring more rigorous validation for AI-based diagnostic software.",
+        "link": "https://example.com/fda-ai-diagnostics",
+        "source": "CNBC Business",
+        "sentiment": "neutral", "urgency": "high",
+        "key_insight": "Companies with AI diagnostic products in the pipeline may face longer approval timelines.",
+        "recommended_action": "Review current product roadmaps against the new validation requirements immediately.",
+        "sector": "Healthcare"
+    },
+    {
+        "title": "Amazon Expands Same-Day Delivery to 15 New Metro Areas",
+        "summary": "The expansion adds same-day delivery coverage ahead of the holiday shopping season.",
+        "link": "https://example.com/amazon-same-day",
+        "source": "Amazon News",
+        "sentiment": "positive", "urgency": "low",
+        "key_insight": "Expanded logistics coverage strengthens competitive pressure on regional retailers.",
+        "recommended_action": "Reassess delivery-speed positioning if competing in any of the newly covered metro areas.",
+        "sector": "Retail"
+    },
+    {
+        "title": "Antitrust Case Against Tech Giant Moves to Trial",
+        "summary": "A federal judge ruled that the antitrust case will proceed to trial early next year.",
+        "link": "https://example.com/antitrust-trial",
+        "source": "TechCrunch AI",
+        "sentiment": "negative", "urgency": "high",
+        "key_insight": "A trial date creates a prolonged period of regulatory uncertainty for the company and its partners.",
+        "recommended_action": "Flag any dependencies on this company's platform for contingency planning.",
+        "sector": "Legal"
+    },
+]
+
 # ---- Hero header (replaces plain st.title / st.markdown / st.caption) ----
 st.markdown("""
 <div class="sb-hero">
@@ -279,6 +345,11 @@ with col1:
         value=10,
         help="Total articles analyzed across all three sources combined — 10 means roughly 3-4 articles per source"
     )
+    demo_mode = st.checkbox(
+        "🎬 Use demo data (skip live fetch)",
+        value=False,
+        help="Uses a fixed sample of pre-analyzed articles instead of live RSS + AI calls. Useful if you're presenting and don't want to depend on live feeds or API availability."
+    )
 
 with col2:
     st.subheader("🎯 Select Sectors to Monitor")
@@ -295,6 +366,7 @@ with col2:
         default=["Technology", "General Business"],
         help="Select sectors — results update instantly"
     )
+    st.caption("ℹ️ Articles are pulled from general business feeds, then classified into sectors by AI — this isn't sector-specific sourcing.")
 
 st.divider()
 
@@ -320,108 +392,116 @@ if run_clicked:
     progress = st.progress(0)
     status = st.empty()
 
-    status.info("📡 Step 1/3 — Fetching articles from news sources...")
-    progress.progress(25)
+    if demo_mode:
+        status.info("🎬 Demo mode — loading sample data (no live fetch or AI calls)...")
+        progress.progress(50)
+        analyzed = list(DEMO_ARTICLES)[:num_articles]
+        progress.progress(100)
+        status.success("✅ Demo data loaded!")
 
-    articles = []
-    feed_errors = []
-    feeds = [
-        ("CNBC Business", "https://www.cnbc.com/id/10001147/device/rss/rss.html"),
-        ("TechCrunch AI", "https://techcrunch.com/category/artificial-intelligence/feed/"),
-        ("Amazon News", "https://www.aboutamazon.com/news/rss")
-    ]
+    else:
+        status.info("📡 Step 1/3 — Fetching articles from news sources...")
+        progress.progress(25)
 
-    for source_name, url in feeds:
-        source_articles, error = fetch_feed_articles(source_name, url, num_articles // 3 + 1)
-        if error:
-            feed_errors.append(error)
-        articles.extend(source_articles)
+        articles = []
+        feed_errors = []
+        feeds = [
+            ("CNBC Business", "https://www.cnbc.com/id/10001147/device/rss/rss.html"),
+            ("TechCrunch AI", "https://techcrunch.com/category/artificial-intelligence/feed/"),
+            ("Amazon News", "https://www.aboutamazon.com/news/rss")
+        ]
 
-    if feed_errors:
-        st.warning("⚠️ Some sources had issues: " + " | ".join(feed_errors))
+        for source_name, url in feeds:
+            source_articles, error = fetch_feed_articles(source_name, url, num_articles // 3 + 1)
+            if error:
+                feed_errors.append(error)
+            articles.extend(source_articles)
 
-    if len(articles) == 0:
-        st.error("❌ Could not fetch any articles from any source. Check your internet connection or try again shortly.")
-        st.stop()
+        if feed_errors:
+            st.warning("⚠️ Some sources had issues: " + " | ".join(feed_errors))
 
-    status.info("🤖 Step 2/3 — Groq AI analyzing articles...")
-    progress.progress(60)
+        if len(articles) == 0:
+            st.error("❌ Could not fetch any articles from any source. Check your internet connection, or enable Demo Mode above and try again.")
+            st.stop()
 
-    try:
-        groq_api_key = st.secrets["GROQ_API_KEY"]
-    except KeyError:
-        st.error("❌ GROQ_API_KEY is not set in Streamlit secrets. Add it in your app's Settings > Secrets.")
-        st.stop()
+        status.info("🤖 Step 2/3 — Groq AI analyzing articles...")
+        progress.progress(60)
 
-    analyzed = []
-    analysis_errors = []
-    for article in articles[:num_articles]:
         try:
-            response = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {groq_api_key}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": "llama-3.1-8b-instant",
-                    "max_tokens": 300,
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": "You are a market intelligence analyst. Respond ONLY with a JSON object with these exact fields: sentiment (positive/negative/neutral), urgency (high/medium/low), key_insight (one sentence), recommended_action (one sentence), sector (must be exactly one of: Healthcare, Technology, Retail, Finance, Legal, General). No extra text."
-                        },
-                        {
-                            "role": "user",
-                            "content": f"Title: {article['title']}\nSummary: {article['summary']}"
-                        }
-                    ]
-                },
-                timeout=10
-            )
+            groq_api_key = st.secrets["GROQ_API_KEY"]
+        except KeyError:
+            st.error("❌ GROQ_API_KEY is not set in Streamlit secrets. Add it in your app's Settings > Secrets, or enable Demo Mode above.")
+            st.stop()
 
-            if response.status_code != 200:
-                raise RuntimeError(f"Groq API returned status {response.status_code}")
+        analyzed = []
+        analysis_errors = []
+        for article in articles[:num_articles]:
+            try:
+                response = requests.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {groq_api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": "llama-3.1-8b-instant",
+                        "max_tokens": 300,
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": "You are a market intelligence analyst. Respond ONLY with a JSON object with these exact fields: sentiment (positive/negative/neutral), urgency (high/medium/low), key_insight (one sentence), recommended_action (one sentence), sector (must be exactly one of: Healthcare, Technology, Retail, Finance, Legal, General). No extra text."
+                            },
+                            {
+                                "role": "user",
+                                "content": f"Title: {article['title']}\nSummary: {article['summary']}"
+                            }
+                        ]
+                    },
+                    timeout=10
+                )
 
-            data = response.json()
-            ai_text = data["choices"][0]["message"]["content"]
-            cleaned = ai_text.replace("```json", "").replace("```", "").strip()
-            ai_result = json.loads(cleaned)
+                if response.status_code != 200:
+                    raise RuntimeError(f"Groq API returned status {response.status_code}")
 
-            analyzed.append({
-                **article,
-                "sentiment": ai_result.get("sentiment", "neutral"),
-                "urgency": ai_result.get("urgency", "low"),
-                "key_insight": ai_result.get("key_insight", ""),
-                "recommended_action": ai_result.get("recommended_action", ""),
-                "sector": ai_result.get("sector", "General")
-            })
-        except requests.exceptions.Timeout:
-            analysis_errors.append(f"Timed out analyzing: {article['title'][:50]}")
-            analyzed.append({**article, "sentiment": "neutral", "urgency": "low",
-                              "key_insight": "Analysis timed out", "recommended_action": "Review manually",
-                              "sector": "General"})
-        except (KeyError, json.JSONDecodeError) as e:
-            analysis_errors.append(f"Unexpected AI response for: {article['title'][:50]}")
-            analyzed.append({**article, "sentiment": "neutral", "urgency": "low",
-                              "key_insight": "Analysis unavailable (bad response format)", "recommended_action": "Review manually",
-                              "sector": "General"})
-        except Exception as e:
-            analysis_errors.append(f"{article['title'][:50]}: {e}")
-            analyzed.append({**article, "sentiment": "neutral", "urgency": "low",
-                              "key_insight": "Analysis unavailable", "recommended_action": "Review manually",
-                              "sector": "General"})
+                data = response.json()
+                ai_text = data["choices"][0]["message"]["content"]
+                cleaned = ai_text.replace("```json", "").replace("```", "").strip()
+                ai_result = json.loads(cleaned)
 
-    if analysis_errors:
-        with st.expander(f"⚠️ {len(analysis_errors)} article(s) had analysis issues (click to see why)"):
-            for err in analysis_errors:
-                st.caption(err)
+                analyzed.append({
+                    **article,
+                    "sentiment": ai_result.get("sentiment", "neutral"),
+                    "urgency": ai_result.get("urgency", "low"),
+                    "key_insight": ai_result.get("key_insight", ""),
+                    "recommended_action": ai_result.get("recommended_action", ""),
+                    "sector": ai_result.get("sector", "General")
+                })
+            except requests.exceptions.Timeout:
+                analysis_errors.append(f"Timed out analyzing: {article['title'][:50]}")
+                analyzed.append({**article, "sentiment": "neutral", "urgency": "low",
+                                  "key_insight": "Analysis timed out", "recommended_action": "Review manually",
+                                  "sector": "General"})
+            except (KeyError, json.JSONDecodeError) as e:
+                analysis_errors.append(f"Unexpected AI response for: {article['title'][:50]}")
+                analyzed.append({**article, "sentiment": "neutral", "urgency": "low",
+                                  "key_insight": "Analysis unavailable (bad response format)", "recommended_action": "Review manually",
+                                  "sector": "General"})
+            except Exception as e:
+                analysis_errors.append(f"{article['title'][:50]}: {e}")
+                analyzed.append({**article, "sentiment": "neutral", "urgency": "low",
+                                  "key_insight": "Analysis unavailable", "recommended_action": "Review manually",
+                                  "sector": "General"})
+
+        if analysis_errors:
+            with st.expander(f"⚠️ {len(analysis_errors)} article(s) had analysis issues (click to see why)"):
+                for err in analysis_errors:
+                    st.caption(err)
+
+        progress.progress(100)
+        status.success("✅ Analysis complete!")
 
     st.session_state.analyzed_articles = analyzed
     st.session_state.analysis_done = True
-
-    progress.progress(100)
-    status.success("✅ Analysis complete!")
 
 if st.session_state.analysis_done and st.session_state.analyzed_articles:
 
@@ -531,7 +611,6 @@ if st.session_state.analysis_done and st.session_state.analyzed_articles:
 
             if emails_sent:
                 st.success(f"🎉 {len(emails_sent)} sector reports delivered to {email}!")
-                st.balloons()
 
         except KeyError:
             st.info("📧 Email not configured. Add Gmail credentials to secrets.toml")
