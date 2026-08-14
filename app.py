@@ -8,6 +8,30 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_feed_articles(source_name, url, max_count):
+    """Fetch and parse one RSS feed. Cached for 10 minutes so re-running
+    the demo doesn't re-hit every feed from scratch. Returns (articles, error)."""
+    try:
+        feed = feedparser.parse(url)
+        if getattr(feed, "bozo", False) and not feed.entries:
+            return [], f"{source_name} feed could not be parsed."
+        if not feed.entries:
+            return [], f"{source_name} returned no articles right now."
+        articles = []
+        for entry in feed.entries[:max_count]:
+            articles.append({
+                "title": entry.get("title", ""),
+                "summary": entry.get("summary", "")[:200],
+                "link": entry.get("link", ""),
+                "source": source_name
+            })
+        return articles, None
+    except Exception as e:
+        return [], f"{source_name} fetch failed: {e}"
+
+
 def send_sector_email(recipient_email, sector_name, articles, sender_email, app_password):
     icon = {
         "Technology": "💻",
@@ -66,7 +90,7 @@ def send_sector_email(recipient_email, sector_name, articles, sender_email, app_
     <head><meta charset="UTF-8"></head>
     <body style="font-family: sans-serif; background: #f8fafc; padding: 32px;">
         <div style="max-width: 1200px; margin: 0 auto;">
-            <div style="background: linear-gradient(135deg, #1e293b, #3b82f6); 
+            <div style="background: linear-gradient(135deg, #0F172A, #3b82f6); 
                 color: white; padding: 32px; border-radius: 12px; margin-bottom: 24px;">
                 <h1 style="margin: 0 0 8px 0;">{icon} {sector_name} Market Intelligence</h1>
                 <p style="margin: 0; opacity: 0.8;">
@@ -117,6 +141,102 @@ st.set_page_config(
     layout="wide"
 )
 
+# ---- Custom CSS for a darker, more polished look ----
+# This works on TOP of .streamlit/config.toml (which sets the base dark palette).
+# Together they control the overall dark theme; this block adds finishing touches
+# config.toml alone can't do — card styling, spacing, custom title, buttons, badges.
+st.markdown("""
+<style>
+    /* Tighter, more premium spacing */
+    .block-container {
+        padding-top: 2.5rem;
+        padding-bottom: 3rem;
+        max-width: 1200px;
+    }
+
+    /* Header / hero band */
+    .sb-hero {
+        background: linear-gradient(135deg, #0F172A 0%, #1E3A8A 100%);
+        border: 1px solid #1E293B;
+        border-radius: 14px;
+        padding: 32px 36px;
+        margin-bottom: 8px;
+    }
+    .sb-hero h1 {
+        margin: 0;
+        font-size: 2rem;
+        font-weight: 700;
+        color: #F1F5F9;
+        letter-spacing: -0.02em;
+    }
+    .sb-hero p {
+        margin: 8px 0 0 0;
+        color: #94A3B8;
+        font-size: 0.95rem;
+    }
+    .sb-hero .sb-tag {
+        display: inline-block;
+        margin-top: 14px;
+        font-size: 0.75rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #60A5FA;
+        background: rgba(59, 130, 246, 0.12);
+        border: 1px solid rgba(59, 130, 246, 0.35);
+        padding: 4px 12px;
+        border-radius: 20px;
+    }
+
+    /* Section subheaders get a subtle accent bar */
+    h2, h3 {
+        color: #E2E8F0 !important;
+        font-weight: 650 !important;
+    }
+
+    /* Buttons */
+    .stButton > button {
+        border-radius: 8px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        border: 1px solid rgba(59, 130, 246, 0.4);
+        transition: all 0.15s ease;
+    }
+    .stButton > button:hover {
+        border-color: #3B82F6;
+        box-shadow: 0 0 0 1px #3B82F6;
+    }
+
+    /* Metric cards */
+    div[data-testid="stMetric"] {
+        background: #1E293B;
+        border: 1px solid #334155;
+        border-radius: 10px;
+        padding: 14px 16px;
+    }
+
+    /* Expanders (article cards) */
+    div[data-testid="stExpander"] {
+        border: 1px solid #334155;
+        border-radius: 10px;
+        background: #16213A;
+    }
+
+    /* Dividers a touch subtler */
+    hr {
+        border-color: #334155 !important;
+    }
+
+    /* Footer */
+    .sb-footer {
+        text-align: center;
+        color: #64748B;
+        font-size: 0.8rem;
+        margin-top: 24px;
+        letter-spacing: 0.02em;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 SECTOR_ICONS = {
     "Technology": "💻",
     "Healthcare": "🏥",
@@ -127,10 +247,16 @@ SECTOR_ICONS = {
     "General Business": "📊"
 }
 
-st.title("📊 Market Intelligence Agent V2")
-st.markdown("**Automatically analyze business news and receive personalized sector intelligence**")
-st.caption("📡 Data sourced from CNBC Business, Amazon News and TechCrunch AI — updated every time you run")
-st.divider()
+# ---- Hero header (replaces plain st.title / st.markdown / st.caption) ----
+st.markdown("""
+<div class="sb-hero">
+    <h1>📊 SectorBrief — Market Intelligence Agent</h1>
+    <p>Automatically analyze business news and receive personalized sector intelligence, delivered straight to your inbox.</p>
+    <span class="sb-tag">Live data · CNBC · TechCrunch AI · Amazon News</span>
+</div>
+""", unsafe_allow_html=True)
+
+st.write("")
 
 if "analyzed_articles" not in st.session_state:
     st.session_state.analyzed_articles = []
@@ -198,6 +324,7 @@ if run_clicked:
     progress.progress(25)
 
     articles = []
+    feed_errors = []
     feeds = [
         ("CNBC Business", "https://www.cnbc.com/id/10001147/device/rss/rss.html"),
         ("TechCrunch AI", "https://techcrunch.com/category/artificial-intelligence/feed/"),
@@ -205,20 +332,16 @@ if run_clicked:
     ]
 
     for source_name, url in feeds:
-        try:
-            feed = feedparser.parse(url)
-            for entry in feed.entries[:num_articles//3 + 1]:
-                articles.append({
-                    "title": entry.get("title", ""),
-                    "summary": entry.get("summary", "")[:200],
-                    "link": entry.get("link", ""),
-                    "source": source_name
-                })
-        except:
-            pass
+        source_articles, error = fetch_feed_articles(source_name, url, num_articles // 3 + 1)
+        if error:
+            feed_errors.append(error)
+        articles.extend(source_articles)
+
+    if feed_errors:
+        st.warning("⚠️ Some sources had issues: " + " | ".join(feed_errors))
 
     if len(articles) == 0:
-        st.error("❌ Could not fetch articles. Please check your internet connection.")
+        st.error("❌ Could not fetch any articles from any source. Check your internet connection or try again shortly.")
         st.stop()
 
     status.info("🤖 Step 2/3 — Groq AI analyzing articles...")
@@ -226,10 +349,12 @@ if run_clicked:
 
     try:
         groq_api_key = st.secrets["GROQ_API_KEY"]
-    except:
-        groq_api_key = ""
+    except KeyError:
+        st.error("❌ GROQ_API_KEY is not set in Streamlit secrets. Add it in your app's Settings > Secrets.")
+        st.stop()
 
     analyzed = []
+    analysis_errors = []
     for article in articles[:num_articles]:
         try:
             response = requests.post(
@@ -254,6 +379,10 @@ if run_clicked:
                 },
                 timeout=10
             )
+
+            if response.status_code != 200:
+                raise RuntimeError(f"Groq API returned status {response.status_code}")
+
             data = response.json()
             ai_text = data["choices"][0]["message"]["content"]
             cleaned = ai_text.replace("```json", "").replace("```", "").strip()
@@ -267,15 +396,26 @@ if run_clicked:
                 "recommended_action": ai_result.get("recommended_action", ""),
                 "sector": ai_result.get("sector", "General")
             })
-        except:
-            analyzed.append({
-                **article,
-                "sentiment": "neutral",
-                "urgency": "low",
-                "key_insight": "Analysis unavailable",
-                "recommended_action": "Review manually",
-                "sector": "General"
-            })
+        except requests.exceptions.Timeout:
+            analysis_errors.append(f"Timed out analyzing: {article['title'][:50]}")
+            analyzed.append({**article, "sentiment": "neutral", "urgency": "low",
+                              "key_insight": "Analysis timed out", "recommended_action": "Review manually",
+                              "sector": "General"})
+        except (KeyError, json.JSONDecodeError) as e:
+            analysis_errors.append(f"Unexpected AI response for: {article['title'][:50]}")
+            analyzed.append({**article, "sentiment": "neutral", "urgency": "low",
+                              "key_insight": "Analysis unavailable (bad response format)", "recommended_action": "Review manually",
+                              "sector": "General"})
+        except Exception as e:
+            analysis_errors.append(f"{article['title'][:50]}: {e}")
+            analyzed.append({**article, "sentiment": "neutral", "urgency": "low",
+                              "key_insight": "Analysis unavailable", "recommended_action": "Review manually",
+                              "sector": "General"})
+
+    if analysis_errors:
+        with st.expander(f"⚠️ {len(analysis_errors)} article(s) had analysis issues (click to see why)"):
+            for err in analysis_errors:
+                st.caption(err)
 
     st.session_state.analyzed_articles = analyzed
     st.session_state.analysis_done = True
@@ -399,4 +539,4 @@ if st.session_state.analysis_done and st.session_state.analyzed_articles:
             st.error(f"❌ Email error: {str(e)}")
 
 st.divider()
-st.markdown("*Market Intelligence Agent V2 | Built with Streamlit + Groq AI | Gayatri Pokale*")
+st.markdown('<p class="sb-footer">SectorBrief — Market Intelligence Agent V2 · Built with Streamlit + Groq AI · Gayatri Pokale</p>', unsafe_allow_html=True)
